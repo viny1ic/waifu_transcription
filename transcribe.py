@@ -1,28 +1,57 @@
 #!/usr/bin/env python3
-import sys
+import argparse
 import json
+import random
+import sys
 import threading
-import requests
 from pathlib import Path
 from zipfile import ZipFile
 
+import requests
 import pyaudio
-from vosk import Model, KaldiRecognizer
+from vosk import SetLogLevel, Model, KaldiRecognizer
 
-# ——— Load configuration from JSON ———
-with open("models.json", "r", encoding="utf-8") as f:
-    raw_cfg = json.load(f)
+# ——— Turn off Vosk logs ———
+SetLogLevel(-1)
 
+# ——— Paths ———
+BASE       = Path(__file__).parent
+ARTS_FILE  = BASE / "ascii_arts.txt"
+MODEL_CFG  = BASE / "models.json"
+
+# ——— Load ASCII arts ———
+def load_arts() -> list[str]:
+    text = ARTS_FILE.read_text(encoding="utf-8")
+    return [block.strip("\n")
+            for block in text.split("\n===\n")
+            if block.strip()]
+
+# ——— Arg parsing ———
+parser = argparse.ArgumentParser(
+    description="Offline multilingual STT with optional waifu art & debug")
+parser.add_argument("--waifu", action="store_true",
+                    help="Print a random ASCII‐waifu at startup")
+parser.add_argument("--debug", action="store_true",
+                    help="Show per‐language debug output (word counts & phrases)")
+args = parser.parse_args()
+
+# ——— Maybe print a random waifu ———
+if args.waifu:
+    arts = load_arts()
+    print(random.choice(arts), end="\n\n")
+
+# ——— Load language‐model config ———
+raw_cfg = json.loads(MODEL_CFG.read_text(encoding="utf-8"))
 LANG_CONFIG = {
-    key: {
+    k: {
         "name": v["name"],
-        "dir": Path(v["dir"]),
-        "zip": v["zip"],
+        "dir": BASE / v["dir"],
+        "zip": BASE / v["zip"],
         "url": v["url"]
-    }
-    for key, v in raw_cfg.items()
+    } for k, v in raw_cfg.items()
 }
 
+# ——— Audio settings ———
 AUDIO_RATE = 16000
 CHUNK_SIZE = 8000
 
@@ -49,11 +78,11 @@ else:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-
-def ensure_model(lang_key):
+# ——— Model downloader ———
+def ensure_model(lang_key: str):
     cfg = LANG_CONFIG[lang_key]
     target_dir = cfg["dir"]
-    zip_path = Path(cfg["zip"])
+    zip_path    = cfg["zip"]
 
     if target_dir.exists():
         return
@@ -73,7 +102,7 @@ def ensure_model(lang_key):
     zip_path.unlink()
     print(f"✔ {cfg['name']} model ready at {target_dir}/")
 
-
+# ——— Recording until space pressed twice ———
 def record_until_space() -> bytes:
     wait_for_space("▶ Press [space] to START recording…")
     pa = pyaudio.PyAudio()
@@ -100,7 +129,7 @@ def record_until_space() -> bytes:
     print("■ Recording stopped.")
     return b"".join(frames)
 
-
+# ——— Debug output ———
 def debug_language_scores(results: dict):
     art = r"""
        (\_/)
@@ -116,44 +145,40 @@ def debug_language_scores(results: dict):
         print(f"   • {name:<7} : {count:>2} words  → “{text}”")
     print("\n(＾◡＾)╯ Language scoring complete!\n")
 
-
-def detect_language(sample: bytes) -> str:
-    # run each model and collect its raw text + count
+# ——— Language detection ———
+def detect_language(sample: bytes, debug: bool = False) -> str:
     results = {}
     for key, cfg in LANG_CONFIG.items():
         model = Model(str(cfg["dir"]))
-        rec = KaldiRecognizer(model, AUDIO_RATE)
+        rec   = KaldiRecognizer(model, AUDIO_RATE)
         rec.AcceptWaveform(sample)
-        text = json.loads(rec.FinalResult()).get("text", "")
-        results[key] = {
-            "text": text,
-            "count": len(text.split())
-        }
-    debug_language_scores(results)
-    # choose the language with the highest word count
+        text  = json.loads(rec.FinalResult()).get("text", "")
+        results[key] = {"text": text, "count": len(text.split())}
+    if debug:
+        debug_language_scores(results)
     return max(results, key=lambda k: results[k]["count"])
 
-
+# ——— Transcription ———
 def transcribe(sample: bytes, lang_key: str) -> str:
-    cfg = LANG_CONFIG[lang_key]
+    cfg   = LANG_CONFIG[lang_key]
     model = Model(str(cfg["dir"]))
-    rec = KaldiRecognizer(model, AUDIO_RATE)
+    rec   = KaldiRecognizer(model, AUDIO_RATE)
     rec.AcceptWaveform(sample)
     return json.loads(rec.FinalResult()).get("text", "")
 
-
+# ——— Main flow ———
 if __name__ == "__main__":
-    # 1) Ensure all models are downloaded
+    # 1) Ensure all models
     for lang in LANG_CONFIG:
         ensure_model(lang)
 
-    # 2) Record until spacebar pressed twice
+    # 2) Record audio
     audio_data = record_until_space()
 
-    # 3) Detect language (with debug output)
-    chosen = detect_language(audio_data)
+    # 3) Detect language (only debug if requested)
+    chosen = detect_language(audio_data, debug=args.debug)
     print(f"🎯 Detected language: {LANG_CONFIG[chosen]['name']}\n")
 
-    # 4) Transcribe and show result
+    # 4) Transcribe
     transcript = transcribe(audio_data, chosen)
     print("📝 Final Transcription:", transcript)

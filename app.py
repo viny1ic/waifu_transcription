@@ -12,14 +12,6 @@ BASE_DIR = Path(__file__).parent
 # Initialize Flask app with static folder set to serve frontend files
 app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path='')
 
-# Instantiate TranscriptionEngine (no waifu art, no debug, small models by default)
-engine = TranscriptionEngine(
-    base_dir=BASE_DIR,
-    waifu=False,
-    debug=False,
-    big=False
-)
-
 @app.route('/')
 def index():
     """
@@ -30,11 +22,23 @@ def index():
 @app.route('/api/transcribe', methods=['POST'])
 def transcribe_api():
     """
-    Receive audio blob in WAV format, run transcription, and return JSON with transcription.
+    Receive audio blob in WAV format, select model variant, run transcription, and return JSON.
     """
     audio_file = request.files.get('audio')
     if not audio_file:
         return jsonify({'error': 'No audio file provided'}), 400
+
+    # Determine desired model variant
+    variant = request.form.get('modelVariant', 'small')
+    use_big = (variant == 'big')
+
+    # Instantiate engine for this request with chosen variant
+    engine = TranscriptionEngine(
+        base_dir=BASE_DIR,
+        waifu=False,
+        debug=False,
+        big=use_big
+    )
 
     # Save uploaded WAV to a temporary file
     temp_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
@@ -50,14 +54,23 @@ def transcribe_api():
                 break
             frames.append(data)
 
-    # Detect language & transcribe
-    lang = engine.detect_language(frames, debug=engine.debug)
+    # Ensure required models are available
+    engine.ensure_models()
+
+    # Detect language and transcribe
+    lang = engine.detect_language(frames)
     transcript = engine.transcribe(frames, lang)
+
+    # Placeholder for translation logic
+    translation = ''
 
     # Clean up temp file
     temp_wav.close()
 
-    return jsonify({'transcription': transcript})
+    return jsonify({
+        'transcription': transcript,
+        'translation': translation
+    })
 
 if __name__ == '__main__':
     # Run on http://localhost:5000/

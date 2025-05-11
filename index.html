@@ -7,12 +7,23 @@
   <style>
     /* Pastel kawaii theme */
     body { background: #ffe4e1; font-family: 'Comic Sans MS', cursive; color: #333; text-align: center; padding: 2rem; }
-    .container { max-width: 600px; margin: 0 auto; background: #fff0f5; border: 4px dashed #ffb6c1; border-radius:1rem; padding:1.5rem; box-shadow:0 4px 8px rgba(0,0,0,0.1); }
-    h1 { font-size:2.5rem; margin-bottom:1rem; }
-    button { background:#ffb6c1; border:none; padding:0.75rem 1.5rem; margin:0.5rem; font-size:1rem; border-radius:2rem; cursor:pointer; transition:transform .1s; }
-    button:active{transform:scale(0.95);} button:disabled{background:#ffddee; cursor:not-allowed;}
-    .textbox{background:#fff; border:2px solid #ffb6c1; border-radius:.5rem; padding:1rem; margin-top:1rem; min-height:3rem; font-size:1.1rem; text-align:left; white-space:pre-wrap;}
-    audio{margin-top:1rem; outline:none; width:100%;}
+    .container { max-width: 600px; margin: 0 auto; background: #fff0f5; border: 4px dashed #ffb6c1; border-radius: 1rem; padding: 1.5rem; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+    button, select, .switch { margin: 0.5rem; }
+    button, select { background: #ffb6c1; border: none; padding: 0.75rem 1.5rem; font-size: 1rem; border-radius: 2rem; cursor: pointer; transition: transform 0.1s; }
+    button:active, select:active { transform: scale(0.95); }
+    button:disabled, select:disabled { background: #ffddee; cursor: not-allowed; }
+    label { font-size: 1rem; margin-right: 0.5rem; }
+    .textbox { background: #fff; border: 2px solid #ffb6c1; border-radius: 0.5rem; padding: 1rem; margin-top: 1rem; min-height: 3rem; font-size: 1.1rem; text-align: left; white-space: pre-wrap; }
+    audio { margin-top: 1rem; outline: none; width: 100%; }
+    /* Slider switch styling */
+    .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #ffb6c1; }
+    input:checked + .slider:before { transform: translateX(26px); }
+    .switch-label { font-size: 0.9rem; vertical-align: middle; margin-left: 8px; }
   </style>
 </head>
 <body>
@@ -22,6 +33,22 @@
       <button id="recordBtn">🎤 Record</button>
       <button id="stopBtn" disabled>⏹️ Stop</button>
       <button id="playBtn" disabled>🔊 Play Translation</button>
+    </div>
+    <div>
+      <label for="langSelect">~~~Kawaii~~~ Translate to &lt;_&gt;</label>
+      <select id="langSelect">
+        <option value="en">English</option>
+        <option value="es">Spanish</option>
+        <option value="zh">Chinese</option>
+        <option value="hi">Hindi</option>
+      </select>
+    </div>
+    <div style="margin-top:1rem;">
+      <label class="switch">
+        <input type="checkbox" id="modelSwitch">
+        <span class="slider"></span>
+      </label>
+      <span class="switch-label">Use Ultra Kawaii Big Model! &lt;3</span>
     </div>
     <div>
       <h2>Transcription</h2>
@@ -35,59 +62,63 @@
   </div>
 
   <script>
-    let audioContext, recorder, audioChunks=[];
-    const recordBtn=document.getElementById('recordBtn');
-    const stopBtn=document.getElementById('stopBtn');
-    const playBtn=document.getElementById('playBtn');
-    const transcriptDiv=document.getElementById('transcript');
-    const translationDiv=document.getElementById('translation');
-    const audioPlayer=document.getElementById('audioPlayer');
+    let audioContext, recorder, audioChunks = [], micStream;
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn   = document.getElementById('stopBtn');
+    const playBtn   = document.getElementById('playBtn');
+    const langSelect    = document.getElementById('langSelect');
+    const modelSwitch   = document.getElementById('modelSwitch');
+    const transcriptDiv = document.getElementById('transcript');
+    const translationDiv= document.getElementById('translation');
+    const audioPlayer   = document.getElementById('audioPlayer');
 
-    function encodeWAV(samples, sampleRate){
-      const buffer=new ArrayBuffer(44+samples.length*2), view=new DataView(buffer);
-      function writeString(v,o,s){ for(let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); }
-      function floatTo16BitPCM(v,o,input){ for(let i=0;i<input.length;i++,o+=2){ const s=Math.max(-1,Math.min(1,input[i])); v.setInt16(o, s<0? s*0x8000: s*0x7FFF, true); }}
-      writeString(view,0,'RIFF'); view.setUint32(4, 36+samples.length*2, true); writeString(view,8,'WAVE');
-      writeString(view,12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
-      view.setUint32(24,sampleRate,true); view.setUint32(28,sampleRate*2,true); view.setUint16(32,2,true); view.setUint16(34,16,true);
+    function encodeWAV(samples, sampleRate) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+      function writeString(v, o, s) { for (let i=0; i<s.length; i++) v.setUint8(o+i, s.charCodeAt(i)); }
+      function floatTo16BitPCM(v, o, input) { for (let i=0; i<input.length; i++, o+=2) { const s=Math.max(-1,Math.min(1,input[i])); v.setInt16(o, s<0?s*0x8000:s*0x7FFF, true); }}
+      writeString(view,0,'RIFF'); view.setUint32(4,36+samples.length*2,true); writeString(view,8,'WAVE');
+      writeString(view,12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+      view.setUint16(22,1,true); view.setUint32(24,sampleRate,true);
+      view.setUint32(28,sampleRate*2,true); view.setUint16(32,2,true); view.setUint16(34,16,true);
       writeString(view,36,'data'); view.setUint32(40,samples.length*2,true);
-      floatTo16BitPCM(view,44,samples);
-      return new Blob([view],{type:'audio/wav'});
+      floatTo16BitPCM(view,44,samples); return new Blob([view],{type:'audio/wav'});
     }
 
-    recordBtn.addEventListener('click',async()=>{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      audioContext=new AudioContext();
-      const src=audioContext.createMediaStreamSource(stream);
-      recorder=audioContext.createScriptProcessor(4096,1,1);
-      audioChunks=[]; src.connect(recorder); recorder.connect(audioContext.destination);
-      recorder.onaudioprocess=e=> audioChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-      recordBtn.disabled=true; stopBtn.disabled=false;
+    recordBtn.addEventListener('click', async () => {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new AudioContext();
+      const src = audioContext.createMediaStreamSource(micStream);
+      recorder = audioContext.createScriptProcessor(4096,1,1);
+      audioChunks = [];
+      src.connect(recorder);
+      recorder.connect(audioContext.destination);
+      recorder.onaudioprocess = e => audioChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      recordBtn.disabled = true; stopBtn.disabled = false;
       transcriptDiv.textContent='Listening...'; translationDiv.textContent='--'; playBtn.disabled=true; audioPlayer.style.display='none';
     });
 
-    stopBtn.addEventListener('click',async()=>{
-      recorder.disconnect(); audioContext.close(); recordBtn.disabled=false; stopBtn.disabled=true;
+    stopBtn.addEventListener('click', async () => {
+      recorder.disconnect(); audioContext.close(); micStream.getTracks().forEach(t=>t.stop());
+      recordBtn.disabled=false; stopBtn.disabled=true;
       transcriptDiv.textContent='Processing...'; translationDiv.textContent='--';
-
-      // Prepare WAV
-      let totalLen=audioChunks.reduce((s,a)=>s+a.length,0);
-      let samples=new Float32Array(totalLen), offset=0;
-      for(const chunk of audioChunks){ samples.set(chunk, offset); offset+=chunk.length; }
-      const wavBlob=encodeWAV(samples, audioContext.sampleRate||16000);
-
-      // Send to backend
-      const form=new FormData(); form.append('audio', wavBlob, 'recording.wav');
-      try{
-        const res=await fetch('/api/transcribe',{method:'POST',body:form});
-        const data=await res.json();
+      const total = audioChunks.reduce((s,a)=>s+a.length,0); const samples = new Float32Array(total); let off=0;
+      for(const c of audioChunks){ samples.set(c,off); off+=c.length; }
+      const blob = encodeWAV(samples, audioContext.sampleRate||16000);
+      const form = new FormData();
+      form.append('audio', blob, 'recording.wav');
+      form.append('targetLang', langSelect.value);
+      form.append('modelVariant', modelSwitch.checked ? 'big' : 'small');
+      try {
+        const res = await fetch('/api/transcribe', {method:'POST',body:form});
+        const data = await res.json();
         transcriptDiv.textContent=data.transcription||'';
         translationDiv.textContent=data.translation||'';
         if(data.audioUrl){ audioPlayer.src=data.audioUrl; audioPlayer.style.display='block'; playBtn.disabled=false; }
-      }catch(e){ transcriptDiv.textContent='Error!'; console.error(e);}  
+      } catch(e) { transcriptDiv.textContent='Error transcribing.'; console.error(e); }
     });
 
-    playBtn.addEventListener('click',()=>{ audioPlayer.play(); });
+    playBtn.addEventListener('click', () => audioPlayer.play());
   </script>
 </body>
 </html>

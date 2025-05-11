@@ -9,6 +9,7 @@ from zipfile import ZipFile
 
 import requests
 import pyaudio
+from tqdm import tqdm
 from vosk import SetLogLevel, Model, KaldiRecognizer
 
 # ——— Turn off Vosk logs ———
@@ -28,11 +29,14 @@ def load_arts() -> list[str]:
 
 # ——— Arg parsing ———
 parser = argparse.ArgumentParser(
-    description="Offline multilingual STT with optional waifu art & debug")
+    description="Offline multilingual STT with waifu art, debug & big-model toggle"
+)
 parser.add_argument("--waifu", action="store_true",
                     help="Print a random ASCII‐waifu at startup")
 parser.add_argument("--debug", action="store_true",
                     help="Show per‐language debug output (word counts & phrases)")
+parser.add_argument("--big", action="store_true",
+                    help="Use the larger, high-accuracy server-grade models")
 args = parser.parse_args()
 
 # ——— Maybe print a random waifu ———
@@ -40,16 +44,19 @@ if args.waifu:
     arts = load_arts()
     print(random.choice(arts), end="\n\n")
 
-# ——— Load language‐model config ———
+# ——— Load & flatten model config based on small/big flag ———
 raw_cfg = json.loads(MODEL_CFG.read_text(encoding="utf-8"))
-LANG_CONFIG = {
-    k: {
+variant = "big" if args.big else "small"
+
+LANG_CONFIG = {}
+for key, v in raw_cfg.items():
+    sel = v[variant]
+    LANG_CONFIG[key] = {
         "name": v["name"],
-        "dir": BASE / v["dir"],
-        "zip": BASE / v["zip"],
-        "url": v["url"]
-    } for k, v in raw_cfg.items()
-}
+        "dir": BASE / sel["dir"],
+        "zip": BASE / sel["zip"],
+        "url": sel["url"]
+    }
 
 # ——— Audio settings ———
 AUDIO_RATE = 16000
@@ -78,7 +85,7 @@ else:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-# ——— Model downloader ———
+# ——— Model downloader with kawaii progress bar ———
 def ensure_model(lang_key: str):
     cfg = LANG_CONFIG[lang_key]
     target_dir = cfg["dir"]
@@ -87,23 +94,27 @@ def ensure_model(lang_key: str):
     if target_dir.exists():
         return
 
-    print(f"↳ Downloading {cfg['name']} model…")
+    print(f"↳ Downloading {cfg['name']} ({variant}) model…")
     resp = requests.get(cfg["url"], stream=True)
     resp.raise_for_status()
-    with open(zip_path, "wb") as f:
+    total = int(resp.headers.get("content-length", 0) or 0)
+    with open(zip_path, "wb") as f, \
+         tqdm(total=total, unit="iB", unit_scale=True,
+              desc=f"{cfg['name']} 💖", ncols=60, ascii=True) as bar:
         for chunk in resp.iter_content(8192):
             f.write(chunk)
+            bar.update(len(chunk))
 
     print("↳ Extracting…")
     with ZipFile(zip_path, "r") as zipf:
         zipf.extractall()
-    extracted = next(Path().glob("vosk-model-small-*"))
+    extracted = next(Path().glob("vosk-model-*"))
     extracted.rename(target_dir)
     zip_path.unlink()
-    print(f"✔ {cfg['name']} model ready at {target_dir}/")
+    print(f"✔ {cfg['name']} model ready at {target_dir}/\n")
 
 # ——— Recording until space pressed twice ———
-def record_until_space() -> bytes:
+def record_until_space() -> list[bytes]:
     wait_for_space("▶ Press [space] to START recording…")
     pa = pyaudio.PyAudio()
     stream = pa.open(format=pyaudio.paInt16,
@@ -126,8 +137,8 @@ def record_until_space() -> bytes:
     stream.stop_stream()
     stream.close()
     pa.terminate()
-    print("■ Recording stopped.")
-    return b"".join(frames)
+    print("■ Recording stopped.\n")
+    return frames
 
 # ——— Debug output ———
 def debug_language_scores(results: dict):
@@ -145,25 +156,32 @@ def debug_language_scores(results: dict):
         print(f"   • {name:<7} : {count:>2} words  → “{text}”")
     print("\n(＾◡＾)╯ Language scoring complete!\n")
 
-# ——— Language detection ———
-def detect_language(sample: bytes, debug: bool = False) -> str:
+# ——— Language detection with kawaii progress bar ———
+def detect_language(frames: list[bytes], debug: bool = False) -> str:
     results = {}
     for key, cfg in LANG_CONFIG.items():
         model = Model(str(cfg["dir"]))
         rec   = KaldiRecognizer(model, AUDIO_RATE)
-        rec.AcceptWaveform(sample)
-        text  = json.loads(rec.FinalResult()).get("text", "")
+        # feed frames with progress
+        with tqdm(frames, desc=f"{cfg['name']} processing (＾ω＾)",
+                  unit="chunk", ncols=60, ascii=True) as bar:
+            for frame in bar:
+                rec.AcceptWaveform(frame)
+        text = json.loads(rec.FinalResult()).get("text", "")
         results[key] = {"text": text, "count": len(text.split())}
     if debug:
         debug_language_scores(results)
     return max(results, key=lambda k: results[k]["count"])
 
-# ——— Transcription ———
-def transcribe(sample: bytes, lang_key: str) -> str:
+# ——— Transcription with kawaii progress bar ———
+def transcribe(frames: list[bytes], lang_key: str) -> str:
     cfg   = LANG_CONFIG[lang_key]
     model = Model(str(cfg["dir"]))
     rec   = KaldiRecognizer(model, AUDIO_RATE)
-    rec.AcceptWaveform(sample)
+    with tqdm(frames, desc=f"Transcribing {cfg['name']} (≧◡≦)",
+              unit="chunk", ncols=60, ascii=True) as bar:
+        for frame in bar:
+            rec.AcceptWaveform(frame)
     return json.loads(rec.FinalResult()).get("text", "")
 
 # ——— Main flow ———
@@ -173,12 +191,12 @@ if __name__ == "__main__":
         ensure_model(lang)
 
     # 2) Record audio
-    audio_data = record_until_space()
+    frames = record_until_space()
 
-    # 3) Detect language (only debug if requested)
-    chosen = detect_language(audio_data, debug=args.debug)
+    # 3) Detect language
+    chosen = detect_language(frames, debug=args.debug)
     print(f"🎯 Detected language: {LANG_CONFIG[chosen]['name']}\n")
 
     # 4) Transcribe
-    transcript = transcribe(audio_data, chosen)
+    transcript = transcribe(frames, chosen)
     print("📝 Final Transcription:", transcript)

@@ -1,26 +1,54 @@
 {
   "en": {
     "name": "English",
-    "dir": "model_en",
-    "zip": "vosk-model-small-en-us-0.15.zip",
-    "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+    "small": {
+      "dir": "model_en",
+      "zip": "vosk-model-small-en-us-0.15.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+    },
+    "big": {
+      "dir": "model_en_big",
+      "zip": "vosk-model-en-us-0.42-gigaspeech.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.42-gigaspeech.zip"
+    }
   },
   "es": {
     "name": "Spanish",
-    "dir": "model_es",
-    "zip": "vosk-model-small-es-0.42.zip",
-    "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip"
+    "small": {
+      "dir": "model_es",
+      "zip": "vosk-model-small-es-0.42.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip"
+    },
+    "big": {
+      "dir": "model_es_big",
+      "zip": "vosk-model-es-0.42.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-es-0.42.zip"
+    }
   },
   "zh": {
     "name": "Chinese",
-    "dir": "model_zh",
-    "zip": "vosk-model-small-cn-0.22.zip",
-    "url": "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"
+    "small": {
+      "dir": "model_zh",
+      "zip": "vosk-model-small-cn-0.22.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"
+    },
+    "big": {
+      "dir": "model_zh_big",
+      "zip": "vosk-model-cn-0.22.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip"
+    }
   },
   "hi": {
     "name": "Hindi",
-    "dir": "model_hi",
-    "zip": "vosk-model-small-hi-0.22.zip",
-    "url": "https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-hi-0.22.zip"
+    "small": {
+      "dir": "model_hi",
+      "zip": "vosk-model-small-hi-0.22.zip",
+      "url": "https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-hi-0.22.zip"
+    },
+    "big": {
+      "dir": "model_hi_big",
+      "zip": "vosk-model-hi-0.22.zip",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
+    }
   }
 }

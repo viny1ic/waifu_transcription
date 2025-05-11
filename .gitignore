@@ -2,3 +2,4 @@ model
 model_*
 venv
 *.zip
+__pycache__

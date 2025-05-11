@@ -1,0 +1,26 @@
+{
+  "en": {
+    "name": "English",
+    "dir": "model_en",
+    "zip": "vosk-model-small-en-us-0.15.zip",
+    "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+  },
+  "es": {
+    "name": "Spanish",
+    "dir": "model_es",
+    "zip": "vosk-model-small-es-0.42.zip",
+    "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip"
+  },
+  "zh": {
+    "name": "Chinese",
+    "dir": "model_zh",
+    "zip": "vosk-model-small-cn-0.22.zip",
+    "url": "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"
+  },
+  "hi": {
+    "name": "Hindi",
+    "dir": "model_hi",
+    "zip": "vosk-model-small-hi-0.22.zip",
+    "url": "https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-hi-0.22.zip"
+  }
+}
